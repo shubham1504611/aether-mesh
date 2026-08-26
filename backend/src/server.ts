@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
@@ -36,7 +36,7 @@ export function createApplication() {
   app.use('/api/v1', apiRouter);
 
   // Fallback route for root
-  app.get('/', (req, res) => {
+  app.get('/', (req: Request, res: Response) => {
     res.json({
       name: 'AETHER-MESH API Gateway',
       version: '2.4.0-PROD',
