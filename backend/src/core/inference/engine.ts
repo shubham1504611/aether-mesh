@@ -124,23 +124,32 @@ export class InferenceEngine {
 
     // 1. Google Gemini API (Free at aistudio.google.com)
     if (geminiKey && (model.includes('gemini') || (!groqKey && !openrouterKey))) {
-      const geminiModel = 'gemini-2.0-flash';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 300, temperature: 0.7 },
-        }),
-      });
+      const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+      for (const geminiModel of candidateModels) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey.trim()}`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 300, temperature: 0.7 },
+            }),
+          });
 
-      if (res.ok) {
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        const tokens = data?.usageMetadata?.totalTokenCount || Math.ceil((text?.length || 0) / 4);
-        if (text) {
-          return { text: `[Live Gemini 2.0 Flash @ Edge] ${text.trim()}`, tokens };
+          if (res.ok) {
+            const data = await res.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            const tokens = data?.usageMetadata?.totalTokenCount || Math.ceil((text?.length || 0) / 4);
+            if (text) {
+              return { text: `[Live Gemini (${geminiModel}) @ Edge] ${text.trim()}`, tokens };
+            }
+          } else {
+            const errText = await res.text();
+            console.warn(`[Gemini API Warning] Model ${geminiModel} returned status ${res.status}: ${errText}`);
+          }
+        } catch (e: any) {
+          console.warn(`[Gemini API Error] Failed for ${geminiModel}: ${e.message}`);
         }
       }
     }

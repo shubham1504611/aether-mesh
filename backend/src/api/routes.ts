@@ -53,6 +53,17 @@ export function createApiRouter(
     nodeIds: z.array(z.string()).min(1),
   });
 
+  // 0. Provider Status & Health Endpoints
+  router.get('/health/providers', (_req: Request, res: Response) => {
+    res.json({
+      status: 'ok',
+      hasGeminiKey: !!process.env.GEMINI_API_KEY,
+      geminiKeyLength: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0,
+      hasGroqKey: !!process.env.GROQ_API_KEY,
+      hasOpenRouterKey: !!process.env.OPENROUTER_API_KEY,
+    });
+  });
+
   // 1. Authentication Endpoints
   router.post('/auth/token', (req: Request, res: Response) => {
     const { username, password, tier } = req.body || {};
