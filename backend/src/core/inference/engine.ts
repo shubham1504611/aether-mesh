@@ -59,17 +59,30 @@ export class InferenceEngine {
     const decision = this.router.selectRoute(nodes, preferredRegion);
     const selectedNode = this.mesh.getNode(decision.selectedNodeId)!;
 
-    // 3. Simulate High-Throughput Edge Model Execution
-    const maxTokens = request.maxTokens || 128;
-    const completion = this.generateSyntheticCompletion(request.prompt, request.model || 'gemini-3.7-flash-edge');
-    const tokenCount = Math.min(maxTokens, Math.floor(completion.split(' ').length * 1.3) + 15);
+    // 3. Model Execution: Attempt Real Free LLM Provider (Gemini / Groq / OpenRouter), fallback to synthetic
+    let completion = '';
+    let realTokens: number | null = null;
+    const model = request.model || 'gemini-3.7-flash-edge';
 
-    // Compute execution duration based on node's PEWMA latency + token generation rate
-    const tokenGenTimeMs = (tokenCount / (selectedNode.capacityTokensPerSec / 100)) * 10;
-    const durationMs = Number((selectedNode.pewmaLatencyMs + tokenGenTimeMs + Math.random() * 5).toFixed(1));
+    try {
+      const realResult = await this.callRealLLM(request.prompt, model);
+      if (realResult) {
+        completion = realResult.text;
+        realTokens = realResult.tokens;
+      }
+    } catch (e: any) {
+      console.warn(`[Real LLM Dispatch] Fallback to synthetic execution: ${e.message}`);
+    }
+
+    if (!completion) {
+      completion = this.generateSyntheticCompletion(request.prompt, model);
+    }
+
+    const tokenCount = realTokens || Math.min(request.maxTokens || 128, Math.floor(completion.split(' ').length * 1.3) + 15);
+    const durationMs = Number((Date.now() - startTime + selectedNode.pewmaLatencyMs).toFixed(1));
 
     // Pricing calculation in micro-USD
-    const pricing = this.modelPricing[request.model] || this.modelPricing['gemini-3.7-flash-edge'];
+    const pricing = this.modelPricing[model] || this.modelPricing['gemini-3.7-flash-edge'];
     const costMicroUSD = Number((((request.prompt.length / 4) * pricing.promptPerM + tokenCount * pricing.completionPerM) / 1000).toFixed(4));
 
     const response: InferenceResponse = {
@@ -102,6 +115,102 @@ export class InferenceEngine {
     this.storage.cacheInference(promptHash, response);
 
     return response;
+  }
+
+  private async callRealLLM(prompt: string, model: string): Promise<{ text: string; tokens: number } | null> {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const groqKey = process.env.GROQ_API_KEY;
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+
+    // 1. Google Gemini API (Free at aistudio.google.com)
+    if (geminiKey && (model.includes('gemini') || (!groqKey && !openrouterKey))) {
+      const geminiModel = 'gemini-2.0-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 300, temperature: 0.7 },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const tokens = data?.usageMetadata?.totalTokenCount || Math.ceil((text?.length || 0) / 4);
+        if (text) {
+          return { text: `[Live Gemini 2.0 Flash @ Edge] ${text.trim()}`, tokens };
+        }
+      }
+    }
+
+    // 2. Groq Cloud (Free at console.groq.com)
+    if (groqKey && (model.includes('deepseek') || model.includes('llama') || !geminiKey)) {
+      let groqModel = 'llama-3.3-70b-versatile';
+      if (model.includes('deepseek')) {
+        groqModel = 'deepseek-r1-distill-llama-70b';
+      }
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: groqModel,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 300,
+          temperature: 0.6,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content;
+        const tokens = data?.usage?.total_tokens || Math.ceil((text?.length || 0) / 4);
+        if (text) {
+          return { text: `[Live Groq::${groqModel}] ${text.trim()}`, tokens };
+        }
+      }
+    }
+
+    // 3. OpenRouter Free Models (Free at openrouter.ai)
+    if (openrouterKey) {
+      let orModel = 'meta-llama/llama-3.3-70b-instruct:free';
+      if (model.includes('deepseek')) {
+        orModel = 'deepseek/deepseek-r1:free';
+      } else if (model.includes('gemini')) {
+        orModel = 'google/gemini-2.0-flash-exp:free';
+      }
+
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openrouterKey}`,
+          'HTTP-Referer': 'https://aether-mesh.vercel.app',
+          'X-Title': 'AETHER-MESH Edge Gateway',
+        },
+        body: JSON.stringify({
+          model: orModel,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 300,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content;
+        const tokens = data?.usage?.total_tokens || Math.ceil((text?.length || 0) / 4);
+        if (text) {
+          return { text: `[Live OpenRouter::${orModel}] ${text.trim()}`, tokens };
+        }
+      }
+    }
+
+    return null;
   }
 
   private generateSyntheticCompletion(prompt: string, model: string): string {
