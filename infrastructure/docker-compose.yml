@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # Ingress Gateway & Edge Mesh Service
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../infrastructure/Dockerfile.backend
+    container_name: aether-mesh-backend
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - JWT_SECRET=aether_mesh_secure_production_secret_key_2026
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - mesh-net
+
+  # Futuristic Web Telemetry & Control UI
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../infrastructure/Dockerfile.frontend
+    container_name: aether-mesh-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mesh-net
+
+  # Prometheus Telemetry Scraper
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aether-mesh-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - mesh-net
+
+networks:
+  mesh-net:
+    driver: bridge
