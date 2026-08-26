@@ -123,11 +123,19 @@ export class InferenceEngine {
     const openrouterKey = process.env.OPENROUTER_API_KEY;
 
     // 1. Google Gemini API (Free at aistudio.google.com)
-    if (geminiKey && (model.includes('gemini') || (!groqKey && !openrouterKey))) {
+    let cleanGeminiKey = geminiKey ? geminiKey.trim() : '';
+    const geminiMatch = cleanGeminiKey.match(/AIzaSy[A-Za-z0-9_-]+/);
+    if (geminiMatch) {
+      cleanGeminiKey = geminiMatch[0];
+    } else {
+      cleanGeminiKey = cleanGeminiKey.replace(/^['"]|['"]$/g, '').replace(/^[A-Z_]+=\s*/, '');
+    }
+
+    if (cleanGeminiKey && (model.includes('gemini') || (!groqKey && !openrouterKey))) {
       const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
       for (const geminiModel of candidateModels) {
         try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey.trim()}`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${cleanGeminiKey}`;
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
