@@ -122,17 +122,11 @@ export class InferenceEngine {
     const groqKey = process.env.GROQ_API_KEY;
     const openrouterKey = process.env.OPENROUTER_API_KEY;
 
-    // 1. Google Gemini API (Free at aistudio.google.com)
-    let cleanGeminiKey = geminiKey ? geminiKey.trim() : '';
-    const geminiMatch = cleanGeminiKey.match(/AIzaSy[A-Za-z0-9_-]+/);
-    if (geminiMatch) {
-      cleanGeminiKey = geminiMatch[0];
-    } else {
-      cleanGeminiKey = cleanGeminiKey.replace(/^['"]|['"]$/g, '').replace(/^[A-Z_]+=\s*/, '');
-    }
+    // 1. Google Gemini API (Supports Gemini 3.6 Flash, 3.5 Flash, 2.0 Flash)
+    let cleanGeminiKey = geminiKey ? geminiKey.trim().replace(/^['"]|['"]$/g, '').replace(/^[A-Z_]+=\s*/, '') : '';
 
     if (cleanGeminiKey && (model.includes('gemini') || (!groqKey && !openrouterKey))) {
-      const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+      const candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
       for (const geminiModel of candidateModels) {
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${cleanGeminiKey}`;
