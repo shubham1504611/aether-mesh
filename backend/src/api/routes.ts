@@ -55,10 +55,15 @@ export function createApiRouter(
 
   // 0. Provider Status & Health Endpoints
   router.get('/health/providers', (_req: Request, res: Response) => {
+    const rawKey = process.env.GEMINI_API_KEY || '';
+    const cleanKey = rawKey.match(/AIzaSy[A-Za-z0-9_-]+/) ? rawKey.match(/AIzaSy[A-Za-z0-9_-]+/)![0] : rawKey.trim();
     res.json({
       status: 'ok',
-      hasGeminiKey: !!process.env.GEMINI_API_KEY,
-      geminiKeyLength: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0,
+      hasGeminiKey: !!rawKey,
+      rawLength: rawKey.length,
+      cleanLength: cleanKey.length,
+      cleanPrefix: cleanKey.substring(0, 8),
+      cleanSuffix: cleanKey.length > 4 ? cleanKey.substring(cleanKey.length - 4) : '',
       hasGroqKey: !!process.env.GROQ_API_KEY,
       hasOpenRouterKey: !!process.env.OPENROUTER_API_KEY,
     });
